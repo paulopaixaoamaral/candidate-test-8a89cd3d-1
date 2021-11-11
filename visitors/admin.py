@@ -51,9 +51,12 @@ class VisitorsAdmin(admin.ModelAdmin):
     list_display = (
         "scope",
         "email",
+        "maximum_visits",
+        "visits_count",
         "created_at",
         "expires_at",
         "is_active",
+        "_has_exceeded_maximum_visits",
         "_is_valid",
     )
     readonly_fields = (
@@ -63,6 +66,7 @@ class VisitorsAdmin(admin.ModelAdmin):
         "_context",
         "is_active",
         "expires_at",
+        "visits_count",
     )
     search_fields = (
         "first_name",
@@ -76,6 +80,14 @@ class VisitorsAdmin(admin.ModelAdmin):
         return obj.is_valid
 
     _is_valid.boolean = True  # type: ignore
+
+    def _has_exceeded_maximum_visits(self, obj: Visitor) -> bool:
+        return obj.has_exceeded_maximum_visits
+
+    _has_exceeded_maximum_visits.boolean = True  # type: ignore
+    _has_exceeded_maximum_visits.short_description = (  # type: ignore
+        "Exceeded number of visits"
+    )
 
     def _context(self, obj: Visitor) -> str:
         return pretty_print(obj.context)

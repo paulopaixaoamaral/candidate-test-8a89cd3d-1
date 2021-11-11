@@ -5,6 +5,7 @@ import uuid
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
+from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models.deletion import CASCADE
 from django.http.request import HttpRequest
@@ -31,6 +32,9 @@ class Visitor(models.Model):
         max_length=100, help_text=_lazy("Used to map request to view function")
     )
     created_at = models.DateTimeField(default=tz_now)
+    visits_count = models.IntegerField(
+        default=0, help_text=_lazy("The current number of times a link has been used.")
+    )
     context = models.JSONField(
         null=True,
         blank=True,
@@ -49,6 +53,14 @@ class Visitor(models.Model):
         default=True,
         help_text=_lazy(
             "Set to False to disable the visitor link and prevent further access."
+        ),
+    )
+    maximum_visits = models.IntegerField(
+        blank=True,
+        null=True,
+        validators=[MinValueValidator(1)],
+        help_text=_lazy(
+            "If set, defines the maximum number of times the link can be used."
         ),
     )
 
@@ -88,7 +100,29 @@ class Visitor(models.Model):
     @property
     def is_valid(self) -> bool:
         """Return True if the token is active and not yet expired."""
-        return self.is_active and not self.has_expired
+        return (
+            self.is_active
+            and not self.has_expired
+            and not self.has_exceeded_maximum_visits
+        )
+
+    @property
+    def has_exceeded_maximum_visits(self) -> bool:
+        """Return True if the max number of visits has been exceeded."""
+        return (
+            self.maximum_visits is not None and self.visits_count > self.maximum_visits
+        )
+
+    def add_visit(self) -> None:
+        """Add a new visit if maximum_visits is set, do nothing otherwise."""
+        if self.maximum_visits is None:
+            return
+
+        # Atomically increase the number of visits by 1.
+        self.visits_count = models.F("visits_count") + 1
+        self.save(update_fields=["visits_count"])
+        # Make sure the number of visits is updated in the object after the increment.
+        self.refresh_from_db()
 
     def validate(self) -> None:
         """Raise InvalidVisitorPass if inactive or expired."""
@@ -96,6 +130,8 @@ class Visitor(models.Model):
             raise InvalidVisitorPass("Visitor pass is inactive")
         if self.has_expired:
             raise InvalidVisitorPass("Visitor pass has expired")
+        if self.has_exceeded_maximum_visits:
+            raise InvalidVisitorPass("Visitor pass has exceeded the number of visits")
 
     def serialize(self) -> dict:
         """
@@ -132,6 +168,7 @@ class Visitor(models.Model):
         """Reactivate the token so it can be reused."""
         self.is_active = True
         self.expires_at = tz_now() + self.DEFAULT_TOKEN_EXPIRY
+        self.visits_count = 0
         self.save()
 
 
