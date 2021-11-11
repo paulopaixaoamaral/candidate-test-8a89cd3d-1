@@ -29,6 +29,11 @@ class VisitorRequestMiddleware:
             return self.get_response(request)
         try:
             visitor = Visitor.objects.get(uuid=visitor_uuid)
+            # The request contains the visitor querystring parameter, which means this
+            # is a new visit: increment the number of visits and make sure the maximum
+            # number of visits will not be exceeded (this check happens in the validate
+            # method).
+            visitor.add_visit()
             visitor.validate()
         except Visitor.DoesNotExist:
             logger.debug("Visitor pass does not exist: %s", visitor_uuid)

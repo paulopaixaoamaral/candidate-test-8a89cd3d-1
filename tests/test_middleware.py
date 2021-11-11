@@ -13,7 +13,9 @@ from visitors.settings import VISITOR_SESSION_KEY
 
 @pytest.fixture
 def visitor() -> Visitor:
-    return Visitor.objects.create(email="fred@example.com", scope="foo")
+    return Visitor.objects.create(
+        email="fred@example.com", scope="foo", maximum_visits=10
+    )
 
 
 class Session(dict):
@@ -66,6 +68,26 @@ class TestVisitorRequestMiddleware(TestVisitorMiddlewareBase):
         middleware(request)
         assert request.user.is_visitor
         assert request.visitor == visitor
+
+    def test_adding_new_visit(self, visitor: Visitor) -> None:
+        assert visitor.visits_count == 0
+        request = self.request(visitor.tokenise("/"))
+        middleware = VisitorRequestMiddleware(lambda r: r)
+        middleware(request)
+        assert request.user.is_visitor
+        assert request.visitor == visitor
+        assert request.visitor.visits_count == 1
+
+    def test_exceeding_maximum_visits(self, visitor: Visitor) -> None:
+        # The maximum of visits is 10, so by setting the current number of visits to 10
+        # a new visit should exceed the maximum.
+        visitor.visits_count = 10
+        visitor.save()
+        request = self.request(visitor.tokenise("/"))
+        middleware = VisitorRequestMiddleware(lambda r: r)
+        middleware(request)
+        assert not request.user.is_visitor
+        assert not request.visitor
 
 
 @pytest.mark.django_db
